@@ -5,11 +5,57 @@ on: [push, pull_request]
 jobs:
   build-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: task_manager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - run: npm install
+
+      - run: npm run build
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: task_manager
+          DATABASE_USER: admin
+          DATABASE_PASSWORD: admin
+
+      - name: Start app in background
+        run: npm start &
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: task_manager
+          DATABASE_USER: admin
+          DATABASE_PASSWORD: admin
+          PORT: 3000
+
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/api/health && exit 0
+            sleep 2
+          done
+          echo "App did not become ready in time" && exit 1
+
       - run: npm test
+
       - run: docker build -t task-manager:ci .
